@@ -6,7 +6,7 @@
 Chassis chassis;
 LeftMotor leftMotor;
 RightMotor rightMotor;
-Rangefinder rangefinder = Rangefinder(2, 3);
+Rangefinder rangefinder = Rangefinder(17, 12);
 
 void setup() {
   chassis.init();
@@ -16,39 +16,26 @@ void setup() {
 
 }
 
-
-void TwistOffLineAndLook(){
-  float Vright = analogRead(A2);
-  delay(1000);
-  chassis.turnFor(20,100, true);
-  delay(500);
-  while(Vright < 100){
-    leftMotor.setMotorEffort(-30);
-    rightMotor.setMotorEffort(30);
-    Vright = analogRead(A2);
-    }
-}
-
-void turnRight(){
+void turnRight(){ //Turn right until the robot is centered over a line
   float Vleft = analogRead(A3);
-  delay(1000);
+  delay(100);
   chassis.turnFor(-30,100, true);
-  delay(500);
+  delay(100);
   do{
-    leftMotor.setMotorEffort(30);
-    rightMotor.setMotorEffort(-30);
+    leftMotor.setMotorEffort(50);
+    rightMotor.setMotorEffort(-50);
     Vleft = analogRead(A3);
     }while(Vleft < 100);
 }
 
-void turnLeft(){
+void turnLeft(){ //Turn left until the robot is centered over a line
   float Vright = analogRead(A2);
-  delay(1000);
+  delay(100);
   chassis.turnFor(30,100, true);
-  delay(500);
+  delay(100);
   do{
-    leftMotor.setMotorEffort(-30);
-    rightMotor.setMotorEffort(30);
+    leftMotor.setMotorEffort(-50);
+    rightMotor.setMotorEffort(50);
     Vright = analogRead(A2);
     }while(Vright < 100);
 }
@@ -56,18 +43,16 @@ void turnLeft(){
 
 
 void loop() {
-  //Serial.println(rangefinder.getDistance());
   
   turnLeft();
-  while(checkIntersectionEvent() == false) {
-    lineFollow(50);
+  while(checkIntersectionEvent() == false) { //Follow the line until an intersection is seen
+    lineFollow(70);
   }
   chassis.driveFor(8, 20, true);
-  delay(1000);
   turnRight();
-  while(rangefinder.getDistance() >= 12.7) {
+  while(rangefinder.getDistance() >= 12.7) { //Follow the line until 5 inches from the wall
     Serial.println(rangefinder.getDistance());
-    lineFollow(50);
+    lineFollow(70);
   }
   chassis.idle();
   exit(0);
