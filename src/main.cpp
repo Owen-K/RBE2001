@@ -9,7 +9,7 @@
 #include "line.h"
 #include "BlueMotor.h"
 
-enum ROBOT_STATE {STARTUP, SETUP, TURN_LEFT, TURN_RIGHT, LINING, IDLE, PICKUP, DROPOFF, TRAVELING, ESTOP, END};
+enum ROBOT_STATE {STARTUP, SETUP, TURN_LEFT, TURN_RIGHT, LINING, IDLE, PICKUP, DROPOFF, TRAVELING, ESTOP, END, WAIT_PICKUP, WAIT_REPLACE};
 
 Chassis chassis;
 LeftMotor leftMotor;
@@ -20,6 +20,7 @@ Servo32U4 servo;
 IRDecoder decoder(14);
 ROBOT_STATE state = STARTUP;
 int code;
+float distance = 99;
 bool locked = false;
 int Road = 0;   
 bool hasPlate = false;
@@ -30,10 +31,12 @@ const int servoAnalogOpen = 290;
 const int servoAnalogClosed = 455;
 int ultraSonicStopCount = 0;
 const int armPosition25Deg = 7340; 
-const int armPosition45Deg = 2680;
+const int armPosition45Deg = 2760;
 const int armPositionStage = 494;
 const int armDrivePosition = 7378;
 ROBOT_STATE lastState;
+//bool ultra = false;
+int intersectionStopCount = 0;
 
 
 
@@ -47,7 +50,6 @@ void eStopCheck(){
 
 
 void turnRight(){ //Turn right until the robot is centered over a line
-  float Vleft = analogRead(A3);
   //delay(100);
   if (!locked) {
     chassis.turnFor(-30,100, true);
@@ -56,14 +58,14 @@ void turnRight(){ //Turn right until the robot is centered over a line
   //delay(100);
   leftMotor.setMotorEffort(50);
   rightMotor.setMotorEffort(-50);
+  float Vleft = analogRead(A3);
   if (Vleft > 200) {
-    state = LINING;
     locked = false;
+    state = LINING;
   }
 }
 
 void turnLeft(){ //Turn left until the robot is centered over a line
-  float Vright = analogRead(A2);
   //delay(100);
   if (!locked) {
     chassis.turnFor(30,100, true);
@@ -72,9 +74,10 @@ void turnLeft(){ //Turn left until the robot is centered over a line
   //delay(100);
   leftMotor.setMotorEffort(-50);
   rightMotor.setMotorEffort(50);
+  float Vright = analogRead(A2);
   if (Vright > 200) {
-    state = LINING;
     locked = false;
+    state = LINING;
   }
 }
 
@@ -93,54 +96,71 @@ void whatShouldIDo(){
 void whereAmI(){
   if (Road == 1){ 
     if (checkIntersectionEvent() == true){
+      intersectionStopCount++;
       chassis.driveFor(8, 20, true);
       Road = 2;
       state = TURN_LEFT;                //turn left
     }
-    if (rangefinder.getDistance() <= 12.7){
-                                // at stage 
-      chassis.idle();
-      ultraSonicStopCount++;
-      whatShouldIDo();          //pickup? dropoff?
+      if (intersectionStopCount == 3 || intersectionStopCount == 8){
+          if (distance <= 12.7){
+                                  // at stage 
+        chassis.idle();
+        ultraSonicStopCount++;
+        distance = 50;
+        whatShouldIDo();          //pickup? dropoff?
+      }
     }
+    
 
   } else if (Road == 2){ 
     if (checkIntersectionEvent() == true){
-      chassis.driveFor(8, 20, true);
+      intersectionStopCount++;
+      chassis.driveFor(8, 10, true);
       Road = 1;
       state = TURN_RIGHT;                //turn right
     }
-    if (rangefinder.getDistance() <= 12.7){
-                                // at roof 25 degrees 
-      chassis.idle();
-      ultraSonicStopCount++;
-      whatShouldIDo();          //pickup? dropoff?
+    if (intersectionStopCount == 1 || intersectionStopCount == 6){
+      if (distance <= 12.7){
+                                  // at roof 25 degrees 
+        chassis.idle();
+        ultraSonicStopCount++;
+        distance = 50;
+        whatShouldIDo();          //pickup? dropoff?
+      }
     }
 
   } else if (Road == 3){ 
     if (checkIntersectionEvent() == true){
+      intersectionStopCount++;
       chassis.driveFor(8, 20, true);
       Road = 4;
       state = TURN_RIGHT;                //turn right
     }
-    if (rangefinder.getDistance() <= 12.7){
-                                // at stage
-      chassis.idle();
-      ultraSonicStopCount++;
-      whatShouldIDo();          //pickup? dropoff?
+    if (intersectionStopCount == 3 || intersectionStopCount == 8){
+      if (distance <= 12.7){
+                                  // at stage
+        chassis.idle();
+        ultraSonicStopCount++;
+        distance = 50;
+        whatShouldIDo();          //pickup? dropoff?
+      }
     }
 
   } else if (Road == 4){ 
     if (checkIntersectionEvent() == true){
-      chassis.driveFor(8, 20, true);
+      intersectionStopCount++;
+      chassis.driveFor(8, 10, true);
       Road = 3;
       state = TURN_LEFT;                //turn left
     }
-    if (rangefinder.getDistance() <= 12.7){
-                                // at roof 45 degrees
-      chassis.idle();
-      ultraSonicStopCount++;
-      whatShouldIDo();          //pickup? dropoff?
+    if (intersectionStopCount == 1 || intersectionStopCount == 6){
+      if (distance <= 20){
+                                  // at roof 45 degrees
+        chassis.idle();
+        ultraSonicStopCount++;
+        distance = 50;
+        whatShouldIDo();          //pickup? dropoff?
+      }
     }
   }
   
@@ -148,10 +168,11 @@ void whereAmI(){
 
 
 void howManyTrips(){ 
+  Serial.println(ultraSonicStopCount);
   if (ultraSonicStopCount == 2){
-    state = PICKUP;            //needs to make a second trip starts picking up 
+    state = WAIT_REPLACE;            //needs to make a second trip starts picking up 
 
-  } else if (ultraSonicStopCount == 4){
+  } else if (ultraSonicStopCount == 3){
     if (bothSides){
       state = END;
     } else {
@@ -168,13 +189,23 @@ void howManyTrips(){
 
 void pickUp(int targetPosition){
   if (!locked) {
-    locked = motor.moveTo(targetPosition);
+    if (motor.moveTo(targetPosition)) {
+      delay(500);
+      if (Road == 2 || Road == 4)
+        chassis.driveFor(6, 3, true);
+      else
+        chassis.driveFor(11, 3, true);
+      servo.writeMicroseconds(gripperClosed);
+      locked = true;
+      state = WAIT_PICKUP;
+    }
   } else {
-    chassis.driveFor(3, 20, true);
-    servo.writeMicroseconds(gripperClosed);
+    //chassis.driveFor(3, 20, true);
+    //servo.writeMicroseconds(gripperClosed);
     if (motor.moveTo(armDrivePosition)) {
       hasPlate = true;
       locked = false;
+      intersectionStopCount++;
       state = TURN_LEFT;          //turns around
     }
   }
@@ -185,12 +216,24 @@ void pickUp(int targetPosition){
 
 void dropOff(int targetPosition){
   if (!locked) {
-    locked = motor.moveTo(targetPosition);
-  } else {
+    motor.moveTo(5000);
+    delay(500);
+    if (Road == 1 || Road == 3)
+      chassis.driveFor(3, 3, true);
+    else
+      chassis.driveFor(5, 3, true);
+    while (!motor.moveTo(targetPosition))
+      delay(1);
     servo.writeMicroseconds(gripperOpen);
+    delay(500);
+    locked = true;
+    chassis.driveFor(-10, 3, true);
+  } else {
+    //servo.writeMicroseconds(gripperOpen);
     if (motor.moveTo(armDrivePosition)) {
       hasPlate = false;
       locked = false;
+      intersectionStopCount++;
       howManyTrips();          //turns around
     }
   }
@@ -208,7 +251,7 @@ void setup() {
   Serial.begin(115200);
   rangefinder.init();
   servo.setMinMaxMicroseconds(500, 2500);
-  servo.writeMicroseconds(gripperClosed);
+  servo.writeMicroseconds(gripperOpen);
 
 }
 
@@ -279,42 +322,62 @@ void loop() {
       if (motor.moveTo(armDrivePosition))
         state = TURN_LEFT;
       break;
+    
     case TURN_LEFT:            // turn left 
+      //Serial.println("left");
       eStopCheck();
       turnLeft(); 
       break;           //new state is linefollow
 
     case TURN_RIGHT:            // turn right
+      //Serial.println("right");
       eStopCheck(); 
       turnRight(); 
       break;           //new state is linefollow
     
     case LINING:            // line follow
+      //Serial.println("lining");
       eStopCheck();
       lineFollow(70);
+      distance = rangefinder.getDistance();
       whereAmI();
       break;
 
     case IDLE:          //drive across field
       eStopCheck();
-      chassis.setMotorEfforts(100, 100);
-      if (checkIntersectionEvent() == true){
+      chassis.driveFor(50, 30);
+      if (analogRead(A2) >= 250 && analogRead(A3) >= 250){
         chassis.driveFor(8, 20, true);
         if (Road == 1){
           turnLeft();
            Road = 3;
           ultraSonicStopCount = 0;
+          intersectionStopCount = 0;
           state = TURN_RIGHT;
         } else if (Road == 3){
           turnRight();
           Road = 1;
           ultraSonicStopCount = 0;
-          state = TURN_RIGHT;
+          intersectionStopCount = 0;
+          state = TURN_LEFT;
         }
       }
       break;
 
     case PICKUP:            // pickup
+      //Serial.println("pickup");
+      eStopCheck();
+      if (Road == 2){
+        pickUp(armPosition25Deg);
+      } else if (Road == 4){
+        pickUp(armPosition45Deg);
+      } else {
+        pickUp(armPositionStage);
+      }
+      break;
+
+    case DROPOFF:            // dropoff
+      //Serial.println("dropoff");
       eStopCheck();
       if (Road == 2){
         dropOff(armPosition25Deg);
@@ -324,25 +387,36 @@ void loop() {
         dropOff(armPositionStage);
       }
       break;
-
-    case DROPOFF:            // dropoff
+    
+    case WAIT_REPLACE:
       eStopCheck();
-      if (Road == 2){
-        dropOff(armPosition25Deg);
-      } else if (Road == 4){
-        dropOff(armPosition45Deg);
-      } else {
-        dropOff(armPositionStage);
+      if (code == REWIND)
+        state = PICKUP;
+      break;
+
+    case WAIT_PICKUP:
+      eStopCheck();
+      if (code == REWIND) {
+        motor.moveTo(5000);
+        delay(500);
+        chassis.driveFor(-5, 3, true);
+        state = PICKUP;
       }
       break;
 
     case TRAVELING:            // turn to switch sides
       eStopCheck();
       chassis.idle();
-      if (Road == 1){
-        chassis.turnFor(-90, 45, true);
-      } else if (Road == 3){
+      if (Road == 2){
+        Road = 1;
         chassis.turnFor(90, 45, true);
+        chassis.driveFor(25, 20, true);
+        chassis.turnFor(-90, 45, true);
+      } else if (Road == 4){
+        Road = 3;
+        chassis.turnFor(-90, 45, true);
+        chassis.driveFor(25, 20, true);
+        chassis.turnFor(92, 45, true);
       }
       bothSides = true;
       state = IDLE;
