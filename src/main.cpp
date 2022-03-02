@@ -25,7 +25,7 @@ bool locked = false;
 int Road = 0;   
 bool hasPlate = false;
 bool bothSides = false;
-const int gripperOpen = 600;
+const int gripperOpen = 1450;
 const int gripperClosed = 2440;
 const int servoAnalogOpen = 290;
 const int servoAnalogClosed = 455;
@@ -56,8 +56,8 @@ void turnRight(){ //Turn right until the robot is centered over a line
     locked = true;
   }
   //delay(100);
-  leftMotor.setMotorEffort(50);
-  rightMotor.setMotorEffort(-50);
+  leftMotor.setMotorEffort(70);
+  rightMotor.setMotorEffort(-70);
   float Vleft = analogRead(A3);
   if (Vleft > 200) {
     locked = false;
@@ -72,8 +72,8 @@ void turnLeft(){ //Turn left until the robot is centered over a line
     locked = true;
   }
   //delay(100);
-  leftMotor.setMotorEffort(-50);
-  rightMotor.setMotorEffort(50);
+  leftMotor.setMotorEffort(-70);
+  rightMotor.setMotorEffort(70);
   float Vright = analogRead(A2);
   if (Vright > 200) {
     locked = false;
@@ -191,7 +191,9 @@ void pickUp(int targetPosition){
   if (!locked) {
     if (motor.moveTo(targetPosition)) {
       delay(500);
-      if (Road == 2 || Road == 4)
+      if (Road == 2)
+        chassis.driveFor(10, 3, true);
+      else if (Road == 4)
         chassis.driveFor(6, 3, true);
       else
         chassis.driveFor(11, 3, true);
@@ -216,18 +218,21 @@ void pickUp(int targetPosition){
 
 void dropOff(int targetPosition){
   if (!locked) {
-    motor.moveTo(5000);
-    delay(500);
-    if (Road == 1 || Road == 3)
-      chassis.driveFor(3, 3, true);
-    else
-      chassis.driveFor(5, 3, true);
-    while (!motor.moveTo(targetPosition))
-      delay(1);
-    servo.writeMicroseconds(gripperOpen);
-    delay(500);
-    locked = true;
-    chassis.driveFor(-10, 3, true);
+    if (motor.moveTo(7000)) {
+      delay(500);
+      if (Road == 2)
+        chassis.driveFor(12, 3, true);
+      else if (Road == 4)
+        chassis.driveFor(7, 3, true);
+      else
+        chassis.driveFor(3, 3, true);
+      while (!motor.moveTo(targetPosition))
+        delay(1);
+      servo.writeMicroseconds(gripperOpen);
+      delay(500);
+      locked = true;
+      chassis.driveFor(-10, 3, true);
+    }
   } else {
     //servo.writeMicroseconds(gripperOpen);
     if (motor.moveTo(armDrivePosition)) {
@@ -345,7 +350,7 @@ void loop() {
 
     case IDLE:          //drive across field
       eStopCheck();
-      chassis.driveFor(50, 30);
+      chassis.driveFor(50, 50);
       if (analogRead(A2) >= 250 && analogRead(A3) >= 250){
         chassis.driveFor(8, 20, true);
         if (Road == 1){
