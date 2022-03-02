@@ -9,15 +9,18 @@ public:
     long getPosition();
     void reset();
     void setup();
+    void setEffortWithoutDB(long target);
+    
 
 private:
     void setEffort(int effort, bool clockwise);
-    static void isr();
-    const float KP = 0.024; // gain
+    static void isrA();
+    static void isrB();
+    const float KP = 0.05; // gain
     const int tolerance = 3;
     const int PWMOutPin = 11;
     const int AIN2 = 4;
     const int AIN1 = 13;
-    const int ENCA = 0;
-    const int ENCB = 1;
+    static const int ENCA = 0;
+    static const int ENCB = 1;
 };

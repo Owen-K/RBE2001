@@ -23,7 +23,8 @@ void BlueMotor::setup()
     ICR1 = 400;
     OCR1C = 0;
 
-    attachInterrupt(digitalPinToInterrupt(ENCA), isr, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(ENCA), isrA, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(ENCB), isrB, CHANGE);
     reset();
 }
 
@@ -38,9 +39,17 @@ void BlueMotor::reset()
 }
 
 
-void BlueMotor::isr()
+void BlueMotor::isrA()
 {
-    count++;
+    if (digitalRead(ENCA) == digitalRead(ENCB)) count++;
+     else count--;
+}
+
+
+void BlueMotor::isrB()
+{
+   if (digitalRead(ENCA) == digitalRead(ENCB)) count--;
+    else count++;
 }
 
 void BlueMotor::setEffort(int effort)
@@ -70,11 +79,34 @@ void BlueMotor::setEffort(int effort, bool clockwise)
     OCR1C = constrain(effort, 0, 400);
 }
 
+void BlueMotor::setEffortWithoutDB(long effort)
+{
+    int adjustedEffort; 
+    if (effort >= 0)
+    {
+        adjustedEffort = effort + 260;
+        setEffort(adjustedEffort);
+    }
+    if (effort <= 0)
+    {
+        adjustedEffort = effort - 260;
+        setEffort(adjustedEffort);
+    } 
+}
+
 void BlueMotor::moveTo(long target)  //Move to this encoder position within the specified
 {                                    //tolerance in the header file using proportional control
                                      //then stop
+    // Otherpress = false 
     while (!(getPosition() < (target + tolerance) && getPosition() > (target - tolerance))) {
-        setEffort((target - getPosition()) * KP);
+        //look for press
+        //if true
+        //Otherpress = true
+        //break
+        setEffortWithoutDB((target - getPosition()) * KP);
     }
     setEffort(0);
+    
 }
+
+
