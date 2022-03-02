@@ -9,7 +9,7 @@
 #include "line.h"
 #include "BlueMotor.h"
 
-enum ROBOT_STATE {STARTUP, TURN_LEFT, TURN_RIGHT, LINING, IDLE, PICKUP, DROPOFF, TRAVELING, ESTOP, END};
+enum ROBOT_STATE {STARTUP, SETUP, TURN_LEFT, TURN_RIGHT, LINING, IDLE, PICKUP, DROPOFF, TRAVELING, ESTOP, END};
 
 Chassis chassis;
 LeftMotor leftMotor;
@@ -17,7 +17,10 @@ RightMotor rightMotor;
 Rangefinder rangefinder = Rangefinder(17, 12);
 BlueMotor motor;
 Servo32U4 servo;
+IRDecoder decoder(14);
 ROBOT_STATE state = STARTUP;
+int code;
+bool locked = false;
 int Road = 0;   
 bool hasPlate = false;
 bool bothSides = false;
@@ -26,60 +29,62 @@ const int gripperClosed = 2440;
 const int servoAnalogOpen = 290;
 const int servoAnalogClosed = 455;
 int ultraSonicStopCount = 0;
-const int armPosition25Deg = 2000; 
-const int armPosition45Deg = 2000;
-const int armPositionStage = 1000;
-const int armDrivePosition = 7375;
+const int armPosition25Deg = 7340; 
+const int armPosition45Deg = 2680;
+const int armPositionStage = 494;
+const int armDrivePosition = 7378;
 ROBOT_STATE lastState;
 
 
-void setup() {
-  motor.setup();
-  motor.reset();
-  chassis.init();
-  chassis.setMotorPIDcoeffs(5, 0.5);
-  Serial.begin(115200);
-  rangefinder.init();
-  servo.setMinMaxMicroseconds(500, 2500);
-  servo.writeMicroseconds(gripperClosed);
 
+
+void eStopCheck(){
+  if (code == PLAY_PAUSE) {
+    lastState = state;
+    state = ESTOP;
+  }
 }
+
 
 void turnRight(){ //Turn right until the robot is centered over a line
   float Vleft = analogRead(A3);
-  delay(100);
-  chassis.turnFor(-30,100, true);
-  delay(100);
-  do{
-    eStopCheck();
-    leftMotor.setMotorEffort(50);
-    rightMotor.setMotorEffort(-50);
-    Vleft = analogRead(A3);
-    }while(Vleft < 100);
+  //delay(100);
+  if (!locked) {
+    chassis.turnFor(-30,100, true);
+    locked = true;
+  }
+  //delay(100);
+  leftMotor.setMotorEffort(50);
+  rightMotor.setMotorEffort(-50);
+  if (Vleft > 200) {
     state = LINING;
-  
+    locked = false;
+  }
 }
 
 void turnLeft(){ //Turn left until the robot is centered over a line
   float Vright = analogRead(A2);
-  delay(100);
-  chassis.turnFor(30,100, true);
-  delay(100);
-  do{
-    eStopCheck();
-    leftMotor.setMotorEffort(-50);
-    rightMotor.setMotorEffort(50);
-    Vright = analogRead(A2);
-    }while(Vright < 100);
+  //delay(100);
+  if (!locked) {
+    chassis.turnFor(30,100, true);
+    locked = true;
+  }
+  //delay(100);
+  leftMotor.setMotorEffort(-50);
+  rightMotor.setMotorEffort(50);
+  if (Vright > 200) {
     state = LINING;
-
+    locked = false;
+  }
 }
 
 
 void whatShouldIDo(){
   if (hasPlate){
+    chassis.idle();
     state = DROPOFF; //drop off
   } else {
+    chassis.idle();
     state = PICKUP; //pickup 
   }
 }
@@ -161,51 +166,56 @@ void howManyTrips(){
 
 
 
-void pickUp(){ 
-  //MOVE TOO IS BLOCKING CODE 
-  if (Road == 2){
-    motor.moveTo(armPosition25Deg);
-  } else if (Road == 4){
-    motor.moveTo(armPosition45Deg);
+void pickUp(int targetPosition){
+  if (!locked) {
+    locked = motor.moveTo(targetPosition);
   } else {
-    motor.moveTo(armPositionStage);
+    chassis.driveFor(3, 20, true);
+    servo.writeMicroseconds(gripperClosed);
+    if (motor.moveTo(armDrivePosition)) {
+      hasPlate = true;
+      locked = false;
+      state = TURN_LEFT;          //turns around
+    }
   }
+
+}
+
+
+
+void dropOff(int targetPosition){
+  if (!locked) {
+    locked = motor.moveTo(targetPosition);
+  } else {
+    servo.writeMicroseconds(gripperOpen);
+    if (motor.moveTo(armDrivePosition)) {
+      hasPlate = false;
+      locked = false;
+      howManyTrips();          //turns around
+    }
+  }
+  
+}
+
+
+
+void setup() {
+  motor.setup();
+  motor.reset();
+  chassis.init();
+  decoder.init();
+  chassis.setMotorPIDcoeffs(5, 0.5);
+  Serial.begin(115200);
+  rangefinder.init();
+  servo.setMinMaxMicroseconds(500, 2500);
   servo.writeMicroseconds(gripperClosed);
-  motor.moveTo(armDrivePosition);
-  hasPlate = true;
-  state = TURN_LEFT;          //turns around
-}
-
-
-
-void dropOff(){
-  if (Road == 2){
-    motor.moveTo(armPosition25Deg);
-  } else if (Road == 4){
-    motor.moveTo(armPosition45Deg);
-  } else {
-    motor.moveTo(armPositionStage);
-  }
-  servo.writeMicroseconds(gripperOpen);
-  motor.moveTo(armDrivePosition);
-  hasPlate = false;
-  howManyTrips();          //turns around
 
 }
-
-
-
-void eStopCheck(){
-  //if button press equal estop button
-  // or if otherpress = true
-  //then oldState = State
-  //state = ESTOP
-}
-
 
 
 void loop() {
-  
+  code = decoder.getKeyCode(true);
+
   //State machine 
   /*
 
@@ -234,18 +244,41 @@ void loop() {
 
   switch (state){
     default:
-    break;
-
-    case STARTUP:            //start state
-      motor.moveTo(armDrivePosition);
-      /*if button equal 1 
-        Road = 1 (25 degree side)
-      if button press equal 2 
-        Road = 3 (45 degree side)
-      */
-      state = TURN_LEFT;
       break;
 
+    case STARTUP:            //start state
+      eStopCheck();
+      //motor.moveTo(armDrivePosition);
+      switch (code){
+        default:
+          motor.setEffort(0);
+          break;
+        case UP_ARROW:
+          motor.setEffort(400);
+          break;
+        case DOWN_ARROW:
+          motor.setEffort(-400);
+          break;
+        case NUM_2:
+          //25 degree roof
+          motor.reset();
+          Road = 1;
+          state = SETUP;
+          break;
+        case NUM_4:
+          //45 degree roof
+          motor.reset();
+          Road = 3;
+          state = SETUP;
+          break;
+      }
+      delay(150);
+      break;
+    
+    case SETUP:
+      if (motor.moveTo(armDrivePosition))
+        state = TURN_LEFT;
+      break;
     case TURN_LEFT:            // turn left 
       eStopCheck();
       turnLeft(); 
@@ -269,7 +302,7 @@ void loop() {
         chassis.driveFor(8, 20, true);
         if (Road == 1){
           turnLeft();
-          Road = 3;
+           Road = 3;
           ultraSonicStopCount = 0;
           state = TURN_RIGHT;
         } else if (Road == 3){
@@ -283,14 +316,24 @@ void loop() {
 
     case PICKUP:            // pickup
       eStopCheck();
-      chassis.idle();
-      pickUp(); //BLOCKING CODE
+      if (Road == 2){
+        dropOff(armPosition25Deg);
+      } else if (Road == 4){
+        dropOff(armPosition45Deg);
+      } else {
+        dropOff(armPositionStage);
+      }
       break;
 
     case DROPOFF:            // dropoff
       eStopCheck();
-      chassis.idle();
-      dropOff();  //BLOCKING CODE
+      if (Road == 2){
+        dropOff(armPosition25Deg);
+      } else if (Road == 4){
+        dropOff(armPosition45Deg);
+      } else {
+        dropOff(armPositionStage);
+      }
       break;
 
     case TRAVELING:            // turn to switch sides
@@ -308,7 +351,8 @@ void loop() {
     case ESTOP:            // E-stop
       chassis.idle();
       motor.setEffort(0);
-      // if resume button press then state = old state
+      if (code == ENTER_SAVE)
+        state = lastState;
       break;
 
     case END:

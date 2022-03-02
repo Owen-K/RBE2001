@@ -94,19 +94,17 @@ void BlueMotor::setEffortWithoutDB(long effort)
     } 
 }
 
-void BlueMotor::moveTo(long target)  //Move to this encoder position within the specified
+bool BlueMotor::moveTo(long target)  //Move to this encoder position within the specified
 {                                    //tolerance in the header file using proportional control
                                      //then stop
     // Otherpress = false 
-    while (!(getPosition() < (target + tolerance) && getPosition() > (target - tolerance))) {
-        //look for press
-        //if true
-        //Otherpress = true
-        //break
+    if (!(getPosition() < (target + tolerance) && getPosition() > (target - tolerance))) {
         setEffortWithoutDB((target - getPosition()) * KP);
-    }
-    setEffort(0);
-    
+    } else {
+        setEffort(0);
+        return true;
+    }  
+    return false;  
 }
 
 
