@@ -1,10 +1,15 @@
 #include <Arduino.h>
 #include <Chassis.h>
 #include <Rangefinder.h>
-#include "line.h"
 #include <Romi32U4.h>
-#include "BlueMotor.h"
 #include <servo32u4.h>
+#include <IRdecoder.h>
+#include <ir_codes.h>
+
+#include "line.h"
+#include "BlueMotor.h"
+
+enum ROBOT_STATE {STARTUP, TURN_LEFT, TURN_RIGHT, LINING, IDLE, PICKUP, DROPOFF, TRAVELING, ESTOP, END};
 
 Chassis chassis;
 LeftMotor leftMotor;
@@ -12,7 +17,7 @@ RightMotor rightMotor;
 Rangefinder rangefinder = Rangefinder(17, 12);
 BlueMotor motor;
 Servo32U4 servo;
-int state = 0; 
+ROBOT_STATE state = STARTUP;
 int Road = 0;   
 bool hasPlate = false;
 bool bothSides = false;
@@ -25,7 +30,7 @@ const int armPosition25Deg = 2000;
 const int armPosition45Deg = 2000;
 const int armPositionStage = 1000;
 const int armDrivePosition = 7375;
-int oldState = -1;
+ROBOT_STATE lastState;
 
 
 void setup() {
@@ -51,7 +56,7 @@ void turnRight(){ //Turn right until the robot is centered over a line
     rightMotor.setMotorEffort(-50);
     Vleft = analogRead(A3);
     }while(Vleft < 100);
-    state = 3;
+    state = LINING;
   
 }
 
@@ -66,16 +71,16 @@ void turnLeft(){ //Turn left until the robot is centered over a line
     rightMotor.setMotorEffort(50);
     Vright = analogRead(A2);
     }while(Vright < 100);
-    state = 3;
+    state = LINING;
 
 }
 
 
 void whatShouldIDo(){
   if (hasPlate){
-    state = 6; //drop off
+    state = DROPOFF; //drop off
   } else {
-    state = 5; //pickup 
+    state = PICKUP; //pickup 
   }
 }
 
@@ -85,7 +90,7 @@ void whereAmI(){
     if (checkIntersectionEvent() == true){
       chassis.driveFor(8, 20, true);
       Road = 2;
-      state = 1;                //turn left
+      state = TURN_LEFT;                //turn left
     }
     if (rangefinder.getDistance() <= 12.7){
                                 // at stage 
@@ -98,7 +103,7 @@ void whereAmI(){
     if (checkIntersectionEvent() == true){
       chassis.driveFor(8, 20, true);
       Road = 1;
-      state = 2;                //turn right
+      state = TURN_RIGHT;                //turn right
     }
     if (rangefinder.getDistance() <= 12.7){
                                 // at roof 25 degrees 
@@ -111,7 +116,7 @@ void whereAmI(){
     if (checkIntersectionEvent() == true){
       chassis.driveFor(8, 20, true);
       Road = 4;
-      state = 2;                //turn right
+      state = TURN_RIGHT;                //turn right
     }
     if (rangefinder.getDistance() <= 12.7){
                                 // at stage
@@ -124,7 +129,7 @@ void whereAmI(){
     if (checkIntersectionEvent() == true){
       chassis.driveFor(8, 20, true);
       Road = 3;
-      state = 1;                //turn left
+      state = TURN_LEFT;                //turn left
     }
     if (rangefinder.getDistance() <= 12.7){
                                 // at roof 45 degrees
@@ -139,17 +144,17 @@ void whereAmI(){
 
 void howManyTrips(){ 
   if (ultraSonicStopCount == 2){
-    state = 5;            //needs to make a second trip starts picking up 
+    state = PICKUP;            //needs to make a second trip starts picking up 
 
   } else if (ultraSonicStopCount == 4){
     if (bothSides){
-      state = 9;
+      state = END;
     } else {
-      state = 7;           //has made two trips cross path
+      state = TRAVELING;           //has made two trips cross path
     }
                
   } else {
-    state = 1;            //turn around at roof
+    state = TURN_LEFT;            //turn around at roof
   }
 
 }
@@ -168,7 +173,7 @@ void pickUp(){
   servo.writeMicroseconds(gripperClosed);
   motor.moveTo(armDrivePosition);
   hasPlate = true;
-  state = 1;          //turns around
+  state = TURN_LEFT;          //turns around
 }
 
 
@@ -194,7 +199,7 @@ void eStopCheck(){
   //if button press equal estop button
   // or if otherpress = true
   //then oldState = State
-  //state = 8
+  //state = ESTOP
 }
 
 
@@ -231,33 +236,33 @@ void loop() {
     default:
     break;
 
-    case 0:            //start state
+    case STARTUP:            //start state
       motor.moveTo(armDrivePosition);
       /*if button equal 1 
         Road = 1 (25 degree side)
       if button press equal 2 
         Road = 3 (45 degree side)
       */
-      state = 1;
+      state = TURN_LEFT;
       break;
 
-    case 1:            // turn left 
+    case TURN_LEFT:            // turn left 
       eStopCheck();
       turnLeft(); 
       break;           //new state is linefollow
 
-    case 2:            // turn right
+    case TURN_RIGHT:            // turn right
       eStopCheck(); 
       turnRight(); 
       break;           //new state is linefollow
     
-    case 3:            // line follow
+    case LINING:            // line follow
       eStopCheck();
       lineFollow(70);
       whereAmI();
       break;
 
-    case 4:          //drive across field
+    case IDLE:          //drive across field
       eStopCheck();
       chassis.setMotorEfforts(100, 100);
       if (checkIntersectionEvent() == true){
@@ -266,29 +271,29 @@ void loop() {
           turnLeft();
           Road = 3;
           ultraSonicStopCount = 0;
-          state = 2;
+          state = TURN_RIGHT;
         } else if (Road == 3){
           turnRight();
           Road = 1;
           ultraSonicStopCount = 0;
-          state = 2;
+          state = TURN_RIGHT;
         }
       }
       break;
 
-    case 5:            // pickup
+    case PICKUP:            // pickup
       eStopCheck();
       chassis.idle();
       pickUp(); //BLOCKING CODE
       break;
 
-    case 6:            // dropoff
+    case DROPOFF:            // dropoff
       eStopCheck();
       chassis.idle();
       dropOff();  //BLOCKING CODE
       break;
 
-    case 7:            // turn to switch sides
+    case TRAVELING:            // turn to switch sides
       eStopCheck();
       chassis.idle();
       if (Road == 1){
@@ -297,16 +302,16 @@ void loop() {
         chassis.turnFor(90, 45, true);
       }
       bothSides = true;
-      state = 4;
+      state = IDLE;
       break;
 
-    case 8:            // E-stop
+    case ESTOP:            // E-stop
       chassis.idle();
       motor.setEffort(0);
       // if resume button press then state = old state
       break;
 
-    case 9:
+    case END:
       chassis.idle();
       motor.setEffort(0);
       exit(0);
